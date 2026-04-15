@@ -1,159 +1,15 @@
-class HexColorPicker {
-  constructor(canvas, { rows = 6 } = {}) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
-    this.center = { x: canvas.width / 2, y: canvas.height / 2 };
-    this.rows = rows;
-    this.hexRadius = 18;
-    this.hexagons = [];
-    this.selectedIndex = -1;
-    this.value = 1;
-    this.alpha = 1;
-    this.onColorChanged = null;
+const picker = document.getElementById('color-picker');
 
-    this.buildHexGrid();
-    this.draw();
-    this.bindEvents();
-  }
+const GRID_RADIUS = 6;
+const HEX_W = 40;
+const HEX_H = 34.64;
+const STEP_X = HEX_W * 0.75;
+const STEP_Y = HEX_H;
 
-  buildHexGrid() {
-    const size = this.hexRadius;
-    const spacingX = Math.sqrt(3) * size;
-    const spacingY = 1.5 * size;
-    const n = this.rows;
+const cells = [];
 
-    for (let q = -n; q <= n; q++) {
-      const r1 = Math.max(-n, -q - n);
-      const r2 = Math.min(n, -q + n);
-      for (let r = r1; r <= r2; r++) {
-        const x = this.center.x + (Math.sqrt(3) * (q + r / 2)) * size;
-        const y = this.center.y + spacingY * r;
-
-        const dx = x - this.center.x;
-        const dy = y - this.center.y;
-        const dist = Math.hypot(dx, dy);
-        const maxDist = n * spacingY;
-
-        let hue = ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360;
-        let sat = Math.min(1, dist / maxDist);
-
-        if (dist < size * 0.45) {
-          sat = 0;
-          hue = 0;
-        }
-
-        this.hexagons.push({ x, y, hue, sat });
-      }
-    }
-  }
-
-  bindEvents() {
-    let dragging = false;
-
-    const handle = (event) => {
-      const rect = this.canvas.getBoundingClientRect();
-      const scaleX = this.canvas.width / rect.width;
-      const scaleY = this.canvas.height / rect.height;
-      const x = (event.clientX - rect.left) * scaleX;
-      const y = (event.clientY - rect.top) * scaleY;
-
-      const i = this.findHexagonAt(x, y);
-      if (i !== -1) {
-        this.selectedIndex = i;
-        this.draw();
-        this.emitColor();
-      }
-    };
-
-    this.canvas.addEventListener('pointerdown', (e) => {
-      dragging = true;
-      handle(e);
-      this.canvas.setPointerCapture(e.pointerId);
-    });
-
-    this.canvas.addEventListener('pointermove', (e) => {
-      if (dragging) handle(e);
-    });
-
-    this.canvas.addEventListener('pointerup', (e) => {
-      dragging = false;
-      this.canvas.releasePointerCapture(e.pointerId);
-    });
-  }
-
-  findHexagonAt(x, y) {
-    const hitRadius = this.hexRadius * 0.95;
-    let winner = -1;
-    let best = Infinity;
-
-    this.hexagons.forEach((h, i) => {
-      const d = Math.hypot(x - h.x, y - h.y);
-      if (d <= hitRadius && d < best) {
-        best = d;
-        winner = i;
-      }
-    });
-
-    return winner;
-  }
-
-  setBrightness(percent) {
-    this.value = Math.min(1, Math.max(0, percent / 100));
-    this.draw();
-    this.emitColor();
-  }
-
-  setAlpha(percent) {
-    this.alpha = Math.min(1, Math.max(0, percent / 100));
-    this.draw();
-    this.emitColor();
-  }
-
-  currentColor() {
-    const selected = this.hexagons[this.selectedIndex] || { hue: 0, sat: 0 };
-    const { r, g, b } = hsvToRgb(selected.hue, selected.sat, this.value);
-    return { r, g, b, a: this.alpha };
-  }
-
-  emitColor() {
-    if (typeof this.onColorChanged === 'function') {
-      this.onColorChanged(this.currentColor());
-    }
-  }
-
-  drawHex(x, y, size, fill, stroke = 'rgba(0,0,0,.12)', width = 1) {
-    const ctx = this.ctx;
-    ctx.beginPath();
-    for (let i = 0; i < 6; i++) {
-      const angle = ((60 * i - 30) * Math.PI) / 180;
-      const px = x + size * Math.cos(angle);
-      const py = y + size * Math.sin(angle);
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    }
-    ctx.closePath();
-    ctx.fillStyle = fill;
-    ctx.fill();
-    ctx.lineWidth = width;
-    ctx.strokeStyle = stroke;
-    ctx.stroke();
-  }
-
-  draw() {
-    const ctx = this.ctx;
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
-    this.hexagons.forEach((h, index) => {
-      const { r, g, b } = hsvToRgb(h.hue, h.sat, this.value);
-      const fill = `rgba(${r},${g},${b},${this.alpha})`;
-      this.drawHex(h.x, h.y, this.hexRadius, fill);
-
-      if (index === this.selectedIndex) {
-        this.drawHex(h.x, h.y, this.hexRadius + 3, 'rgba(0,0,0,0)', '#ffffff', 3.5);
-        this.drawHex(h.x, h.y, this.hexRadius + 5, 'rgba(0,0,0,0)', 'rgba(0,0,0,.55)', 1.2);
-      }
-    });
-  }
+function clamp(v, min, max) {
+  return Math.min(max, Math.max(min, v));
 }
 
 function hsvToRgb(h, s, v) {
@@ -161,51 +17,97 @@ function hsvToRgb(h, s, v) {
   const hp = h / 60;
   const x = c * (1 - Math.abs((hp % 2) - 1));
 
-  let [r1, g1, b1] = [0, 0, 0];
-  if (hp >= 0 && hp < 1) [r1, g1, b1] = [c, x, 0];
-  else if (hp < 2) [r1, g1, b1] = [x, c, 0];
-  else if (hp < 3) [r1, g1, b1] = [0, c, x];
-  else if (hp < 4) [r1, g1, b1] = [0, x, c];
-  else if (hp < 5) [r1, g1, b1] = [x, 0, c];
-  else [r1, g1, b1] = [c, 0, x];
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  if (hp >= 0 && hp < 1) [r, g, b] = [c, x, 0];
+  else if (hp < 2) [r, g, b] = [x, c, 0];
+  else if (hp < 3) [r, g, b] = [0, c, x];
+  else if (hp < 4) [r, g, b] = [0, x, c];
+  else if (hp < 5) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
 
   const m = v - c;
   return {
-    r: Math.round((r1 + m) * 255),
-    g: Math.round((g1 + m) * 255),
-    b: Math.round((b1 + m) * 255)
+    r: Math.round((r + m) * 255),
+    g: Math.round((g + m) * 255),
+    b: Math.round((b + m) * 255)
   };
 }
 
-function toHex({ r, g, b, a }) {
-  const alpha = Math.round(a * 255);
-  const hex = (n) => n.toString(16).padStart(2, '0').toUpperCase();
-  return `#${hex(alpha)}${hex(r)}${hex(g)}${hex(b)}`;
+function rgbToCss({ r, g, b }) {
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
-function toRgbaString({ r, g, b, a }) {
-  return `rgba(${r}, ${g}, ${b}, ${a.toFixed(2)})`;
+function createColor(q, r, centerX, centerY, maxDist) {
+  const x = centerX + q * STEP_X;
+  const y = centerY + r * STEP_Y + q * (STEP_Y / 2);
+
+  const dx = x - centerX;
+  const dy = y - centerY;
+  const dist = Math.hypot(dx, dy);
+  const hue = (Math.atan2(dy, dx) * 180) / Math.PI + 360;
+
+  const sat = clamp(dist / maxDist, 0, 1);
+  const value = clamp(0.62 + ((y - centerY) / (maxDist * 1.7)) * -0.2 + sat * 0.42, 0.52, 1);
+
+  return {
+    x,
+    y,
+    color: rgbToCss(hsvToRgb(hue % 360, sat, value))
+  };
 }
 
-const picker = new HexColorPicker(document.getElementById('color-wheel'), { rows: 6 });
-const brightnessInput = document.getElementById('brightness');
-const alphaInput = document.getElementById('alpha');
-const preview = document.getElementById('preview');
-const hexValue = document.getElementById('hex-value');
-const rgbaValue = document.getElementById('rgba-value');
+function clearSelection() {
+  cells.forEach((el) => el.classList.remove('selected'));
+}
 
-picker.selectedIndex = Math.floor(picker.hexagons.length / 2);
-picker.draw();
+function applyInteractiveScale(el, active) {
+  el.style.transform = active ? 'scale(1.019)' : 'scale(1)';
+}
 
-picker.onColorChanged = (color) => {
-  const hex = toHex(color);
-  const rgba = toRgbaString(color);
-  preview.style.setProperty('--selected', rgba);
-  hexValue.textContent = hex;
-  rgbaValue.textContent = rgba;
-};
+function createHexCell(x, y, color, isCenter) {
+  const hex = document.createElement('button');
+  hex.type = 'button';
+  hex.className = 'hex';
+  hex.style.left = `${x - HEX_W / 2}px`;
+  hex.style.top = `${y - HEX_H / 2}px`;
+  hex.style.setProperty('--hex-color', color);
 
-brightnessInput.addEventListener('input', (e) => picker.setBrightness(Number(e.target.value)));
-alphaInput.addEventListener('input', (e) => picker.setAlpha(Number(e.target.value)));
+  if (isCenter) hex.classList.add('selected');
 
-picker.emitColor();
+  hex.addEventListener('mouseenter', () => applyInteractiveScale(hex, true));
+  hex.addEventListener('mouseleave', () => applyInteractiveScale(hex, false));
+  hex.addEventListener('focus', () => applyInteractiveScale(hex, true));
+  hex.addEventListener('blur', () => applyInteractiveScale(hex, false));
+  hex.addEventListener('mousedown', () => applyInteractiveScale(hex, true));
+  hex.addEventListener('mouseup', () => applyInteractiveScale(hex, false));
+
+  hex.addEventListener('click', () => {
+    clearSelection();
+    hex.classList.add('selected');
+  });
+
+  cells.push(hex);
+  picker.appendChild(hex);
+}
+
+function build() {
+  const centerX = picker.clientWidth / 2;
+  const centerY = picker.clientHeight / 2;
+  const maxDist = GRID_RADIUS * STEP_Y;
+
+  for (let q = -GRID_RADIUS; q <= GRID_RADIUS; q += 1) {
+    const rMin = Math.max(-GRID_RADIUS, -q - GRID_RADIUS);
+    const rMax = Math.min(GRID_RADIUS, -q + GRID_RADIUS);
+
+    for (let r = rMin; r <= rMax; r += 1) {
+      const cell = createColor(q, r, centerX, centerY, maxDist);
+      const isCenter = q === 0 && r === 0;
+      createHexCell(cell.x, cell.y, cell.color, isCenter);
+    }
+  }
+}
+
+build();
